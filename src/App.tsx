@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
-import { Search, Filter, Download, ChevronDown, ChevronUp, MapPin, User, Info, Settings2, Trophy } from 'lucide-react';
+import { Search, Filter, ChevronDown, ChevronUp, MapPin, User, Info, Settings2, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Candidate {
@@ -42,7 +42,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sedeFilter, setSedeFilter] = useState('Todas');
   const [estadoFilter, setEstadoFilter] = useState('Todos');
-  const [visibleColumns, setVisibleColumns] = useState<(keyof Candidate)[]>(['APELLIDOS Y NOMBRE', 'SEDE DE EXAMEN', 'TOTAL FASE 1', 'ESTADO PROVISIONAL']);
+  const [visibleColumns, setVisibleColumns] = useState<(keyof Candidate)[]>(['APELLIDOS Y NOMBRE', 'TOTAL FASE 1', 'ESTADO PROVISIONAL', 'CONOCIMIENTOS GENERALES', 'CONOCIMIENTOS IDIOMA INGLÉS', 'APTITUDES']);
   const [sortConfig, setSortConfig] = useState<{ key: keyof Candidate | 'ranking'; direction: 'asc' | 'desc' }>({ key: 'ranking', direction: 'asc' });
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [visibleCount, setVisibleCount] = useState(100);
@@ -75,11 +75,19 @@ export default function App() {
               return scoreB - scoreA;
             });
 
-            const rankedData = rawData.map(item => {
+            // Create a map for O(1) rank lookup
+            const rankMap = new Map();
+            sortedForRanking.forEach((item, index) => {
               const score = parseScore(item['TOTAL FASE 1']);
-              const rank = score === -1 ? undefined : sortedForRanking.findIndex(r => r === item) + 1;
-              return { ...item, ranking: rank };
+              if (score !== -1) {
+                rankMap.set(item, index + 1);
+              }
             });
+
+            const rankedData = rawData.map(item => ({
+              ...item,
+              ranking: rankMap.get(item)
+            }));
 
             setData(rankedData);
             setLoading(false);
@@ -124,15 +132,46 @@ export default function App() {
 
     if (sortConfig) {
       filtered.sort((a, b) => {
-        const aValue = a[sortConfig.key as keyof Candidate] ?? (sortConfig.key === 'ranking' ? a.ranking : '');
-        const bValue = b[sortConfig.key as keyof Candidate] ?? (sortConfig.key === 'ranking' ? b.ranking : '');
+        const key = sortConfig.key;
+        const aValueRaw = a[key as keyof Candidate] ?? (key === 'ranking' ? a.ranking : '');
+        const bValueRaw = b[key as keyof Candidate] ?? (key === 'ranking' ? b.ranking : '');
+
+        // Define numeric columns for proper numeric sorting
+        const numericColumns = [
+          'TOTAL FASE 1', 
+          'CONOCIMIENTOS GENERALES', 
+          'CONOCIMIENTOS IDIOMA INGLÉS', 
+          'APTITUDES', 
+          'ranking'
+        ];
+
+        if (numericColumns.includes(key as string)) {
+          const parse = (val: any) => {
+            if (typeof val === 'number') return val;
+            if (!val || val === '---' || val === '#N/A') return null;
+            const num = parseFloat(val.toString().replace(',', '.'));
+            return isNaN(num) ? null : num;
+          };
+          
+          const numA = parse(aValueRaw);
+          const numB = parse(bValueRaw);
+          
+          // Always put nulls at the bottom
+          if (numA === null && numB === null) return 0;
+          if (numA === null) return 1;
+          if (numB === null) return -1;
+          
+          if (numA === numB) return 0;
+          return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
+        }
+
+        // Default string sorting with localeCompare for correct accent handling
+        const strA = String(aValueRaw || '');
+        const strB = String(bValueRaw || '');
         
-        if (aValue === undefined) return 1;
-        if (bValue === undefined) return -1;
-        
-        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
+        return sortConfig.direction === 'asc' 
+          ? strA.localeCompare(strB, 'es', { sensitivity: 'accent' })
+          : strB.localeCompare(strA, 'es', { sensitivity: 'accent' });
       });
     }
 
@@ -153,19 +192,6 @@ export default function App() {
     );
   };
 
-  const exportCSV = () => {
-    const csv = Papa.unparse(filteredData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'resultados_controladores_2025.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Header Section */}
@@ -184,13 +210,6 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <button
-                onClick={exportCSV}
-                className="hidden sm:flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-[#0099cc] dark:hover:text-[#0099cc] transition-colors text-sm font-medium"
-              >
-                <Download size={18} />
-                Exportar
-              </button>
             </div>
           </div>
         </div>
@@ -203,7 +222,7 @@ export default function App() {
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Origen de datos</p>
               <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                Convocatoria externa de controladores 2025 de Enaire.
+                Convocatoria externa de controladores 2025 de Enaire
               </p>
             </div>
             <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-3 py-1.5 rounded-lg text-xs font-bold">
@@ -318,25 +337,15 @@ export default function App() {
               <table className="w-full text-left border-collapse table-fixed">
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                    <th 
-                      className="w-16 px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
-                      onClick={() => handleSort('ranking')}
-                    >
-                      <div className="flex items-center gap-1">
-                        Pos
-                        {sortConfig.key === 'ranking' && (sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
-                      </div>
+                    <th className="w-16 px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Pos
                     </th>
                     {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map((col) => (
                       <th 
                         key={col.key}
-                        className={`px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 ${col.key === 'APELLIDOS Y NOMBRE' ? 'w-64' : 'w-32'}`}
-                        onClick={() => handleSort(col.key)}
+                        className={`px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ${col.key === 'APELLIDOS Y NOMBRE' ? 'w-64' : 'w-32'}`}
                       >
-                        <div className="flex items-center gap-1">
-                          {col.label}
-                          {sortConfig.key === col.key && (sortConfig.direction === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
-                        </div>
+                        {col.label}
                       </th>
                     ))}
                   </tr>
