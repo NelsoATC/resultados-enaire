@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
-import { Search, Filter, ChevronDown, ChevronUp, MapPin, User, Info, Settings2, Trophy } from 'lucide-react';
+import { Search, Filter, ChevronDown, ChevronUp, MapPin, User, Info, Settings2, Trophy, BarChart3, List } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import Statistics from './components/Statistics';
 
-interface Candidate {
+export interface Candidate {
   IDENTIFICADOR: string;
   'APELLIDOS Y NOMBRE': string;
   'ADMITIDO/EXCLUIDO': string;
@@ -46,6 +47,7 @@ export default function App() {
   const [sortConfig, setSortConfig] = useState<{ key: keyof Candidate | 'ranking'; direction: 'asc' | 'desc' }>({ key: 'ranking', direction: 'asc' });
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const [visibleCount, setVisibleCount] = useState(100);
+  const [view, setView] = useState<'buscador' | 'estadisticas'>('buscador');
 
   useEffect(() => {
     setVisibleCount(100);
@@ -210,14 +212,43 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-4">
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                <button
+                  onClick={() => setView('buscador')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${view === 'buscador' ? 'bg-white dark:bg-slate-700 text-[#0099cc] shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                  <List size={16} />
+                  <span className="hidden sm:inline">Buscador</span>
+                </button>
+                <button
+                  onClick={() => setView('estadisticas')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${view === 'estadisticas' ? 'bg-white dark:bg-slate-700 text-[#0099cc] shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                >
+                  <BarChart3 size={16} />
+                  <span className="hidden sm:inline">Estadísticas</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Info Card */}
-        <div className="mb-6">
+        {loading ? (
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-20 flex flex-col items-center justify-center gap-4">
+            <div className="w-10 h-10 border-4 border-[#0099cc] border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Cargando datos...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-20 text-center">
+            <p className="text-red-500 font-medium text-sm">{error}</p>
+          </div>
+        ) : view === 'estadisticas' ? (
+          <Statistics data={filteredData} />
+        ) : (
+          <>
+            {/* Info Card */}
+            <div className="mb-6">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Origen de datos</p>
@@ -340,14 +371,29 @@ export default function App() {
                     <th className="w-16 px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                       Pos
                     </th>
-                    {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map((col) => (
-                      <th 
-                        key={col.key}
-                        className={`px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ${col.key === 'APELLIDOS Y NOMBRE' ? 'w-64' : 'w-32'}`}
-                      >
-                        {col.label}
-                      </th>
-                    ))}
+                    {ALL_COLUMNS.filter(c => visibleColumns.includes(c.key)).map((col) => {
+                      const isSortable = [
+                        'TOTAL FASE 1', 
+                        'CONOCIMIENTOS GENERALES', 
+                        'CONOCIMIENTOS IDIOMA INGLÉS', 
+                        'APTITUDES'
+                      ].includes(col.key);
+
+                      return (
+                        <th 
+                          key={col.key}
+                          className={`px-4 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ${col.key === 'APELLIDOS Y NOMBRE' ? 'w-64' : 'w-32'} ${isSortable ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors' : ''}`}
+                          onClick={() => isSortable && handleSort(col.key)}
+                        >
+                          <div className="flex items-center gap-1">
+                            {col.label}
+                            {isSortable && sortConfig.key === col.key && (
+                              sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-[#0099cc]" /> : <ChevronDown size={12} className="text-[#0099cc]" />
+                            )}
+                          </div>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -412,6 +458,8 @@ export default function App() {
         <div className="mt-4 text-[10px] text-slate-400 dark:text-slate-500 text-center">
           Mostrando {Math.min(filteredData.length, visibleCount)} de {filteredData.length} resultados filtrados.
         </div>
+        </>
+        )}
       </main>
 
       {/* Footer Disclaimer Only */}
